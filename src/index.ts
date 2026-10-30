@@ -113,10 +113,7 @@ export default Plugin.define({
           }
 
           try {
-            const transitionEvent = stateMachine.transition(parsed.state, parsed.trigger);
-            console.debug(`[context-pager] Transition: ${transitionEvent.fromState} -> ${transitionEvent.toState}`);
-            const summary = summaryGenerator.generateSummary(parsed.state, parsed.trigger);
-            summaryGenerator.addSummaryToPool(parsed.state, summary);
+            applyTransition(parsed.state, parsed.trigger);
           } catch (error) {
             console.error('Transition failed:', error);
           }
