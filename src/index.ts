@@ -49,6 +49,7 @@ export default Plugin.define({
           try {
             const trigger = `Test command detected: ${command}`;
             const transitionEvent = stateMachine.transition(StateMachineState.DEBUGGING, trigger);
+            console.debug(`[context-pager] Auto-transition: ${transitionEvent.fromState} -> ${transitionEvent.toState} (${trigger})`);
             const summary = summaryGenerator.generateSummary(StateMachineState.DEBUGGING, trigger);
             summaryGenerator.addSummaryToPool(StateMachineState.DEBUGGING, summary);
           } catch (e) {
@@ -62,7 +63,7 @@ export default Plugin.define({
       editor.add({
         name: 'transition',
         description: 'Transition context-pager state machine',
-        execute: async ({ sessionID, prompt }) => {
+        execute: async ({ prompt }) => {
           if (!stateMachine) {
             return;
           }
@@ -76,6 +77,7 @@ export default Plugin.define({
 
           try {
             const transitionEvent = stateMachine.transition(parsed.state, parsed.trigger);
+            console.debug(`[context-pager] Transition: ${transitionEvent.fromState} -> ${transitionEvent.toState}`);
             const summary = summaryGenerator.generateSummary(parsed.state, parsed.trigger);
             summaryGenerator.addSummaryToPool(parsed.state, summary);
           } catch (error) {

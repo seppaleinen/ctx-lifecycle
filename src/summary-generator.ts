@@ -15,8 +15,8 @@ export class SummaryGenerator {
     this.router = router;
   }
 
-  generateSummary(targetState: string, trigger: string): string {
-    const poolId = STATE_TO_POOL[targetState as StateMachineState];
+  generateSummary(targetState: StateMachineState, trigger: string): string {
+    const poolId = STATE_TO_POOL[targetState];
     const poolName = POOL_NAME_MAP[poolId] || 'Unknown';
 
     const summary = `Swapped to ${poolName} Pool. ${trigger}`;
@@ -51,8 +51,8 @@ export class SummaryGenerator {
     }
   }
 
-  addSummaryToPool(state: string, summary: string): void {
-    const poolId = STATE_TO_POOL[state as StateMachineState];
+  addSummaryToPool(state: StateMachineState, summary: string): void {
+    const poolId = STATE_TO_POOL[state];
     const message: ContextMessage = {
       role: 'system',
       content: summary,

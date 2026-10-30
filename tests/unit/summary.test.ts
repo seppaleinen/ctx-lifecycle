@@ -1,24 +1,11 @@
 import { describe, it, expect, beforeEach } from 'bun:test';
 import { SummaryGenerator } from '../../src/summary-generator.js';
 import { ContextRouter } from '../../src/router.js';
+import { StateMachineState } from '../../src/types.js';
 
 describe('SummaryGenerator', () => {
   let summaryGenerator: SummaryGenerator;
   let router: ContextRouter;
-
-  const poolNameMap: Record<string, string> = {
-    'planning': 'Planning',
-    'execution': 'Execution',
-    'testing': 'Testing',
-    'global': 'Global'
-  };
-
-  const stateToPool: Record<string, string> = {
-    'planning': 'planning',
-    'coding': 'execution',
-    'debugging': 'testing',
-    'complete': 'planning'
-  };
 
   beforeEach(() => {
     router = new ContextRouter();
@@ -27,17 +14,17 @@ describe('SummaryGenerator', () => {
 
   describe('generateSummary', () => {
     it('generates valid 1-sentence summary for planning', () => {
-      const summary = summaryGenerator.generateSummary('planning' as any, 'Task switch');
+      const summary = summaryGenerator.generateSummary(StateMachineState.PLANNING, 'Task switch');
       expect(summary).toBe('Swapped to Planning Pool. Task switch');
     });
 
     it('generates summary for execution pool', () => {
-      const summary = summaryGenerator.generateSummary('coding' as any, 'File read: user-service.ts');
+      const summary = summaryGenerator.generateSummary(StateMachineState.CODING, 'File read: user-service.ts');
       expect(summary).toBe('Swapped to Execution Pool. File read: user-service.ts');
     });
 
     it('generates summary for testing pool', () => {
-      const summary = summaryGenerator.generateSummary('debugging' as any, 'Modified auth.ts and db.ts');
+      const summary = summaryGenerator.generateSummary(StateMachineState.DEBUGGING, 'Modified auth.ts and db.ts');
       expect(summary).toBe('Swapped to Testing Pool. Modified auth.ts and db.ts');
     });
   });

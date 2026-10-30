@@ -86,7 +86,7 @@ for (const test of invalidTests) {
   try {
     sm.transition(test.to, 'test');
     console.log(`  ✗ ${test.desc} should have thrown but didn't`);
-  } catch (e) {
+  } catch (_e) {
     console.log(`  ✓ ${test.desc} correctly threw error`);
   }
 }
@@ -114,10 +114,10 @@ const summaryRouter = new ContextRouter();
 const summaryGenerator = new SummaryGenerator(summaryRouter);
 
 const testCases = [
-  { state: 'planning' as any, trigger: 'Task switch', expected: 'Swapped to Planning Pool. Task switch' },
-  { state: 'coding' as any, trigger: 'File read: user-service.ts', expected: 'Swapped to Execution Pool. File read: user-service.ts' },
-  { state: 'debugging' as any, trigger: 'Modified auth.ts and db.ts', expected: 'Swapped to Testing Pool. Modified auth.ts and db.ts' },
-  { state: 'complete' as any, trigger: 'All tests passed', expected: 'Swapped to Planning Pool. All tests passed' },
+  { state: StateMachineState.PLANNING, trigger: 'Task switch', expected: 'Swapped to Planning Pool. Task switch' },
+  { state: StateMachineState.CODING, trigger: 'File read: user-service.ts', expected: 'Swapped to Execution Pool. File read: user-service.ts' },
+  { state: StateMachineState.DEBUGGING, trigger: 'Modified auth.ts and db.ts', expected: 'Swapped to Testing Pool. Modified auth.ts and db.ts' },
+  { state: StateMachineState.COMPLETE, trigger: 'All tests passed', expected: 'Swapped to Planning Pool. All tests passed' },
 ];
 
 console.log('Valid summaries:');
@@ -143,7 +143,7 @@ for (const invalid of invalidSummaries) {
   try {
     summaryGenerator.validateSummary(invalid);
     console.log(`  ✗ "${invalid}" should have thrown but didn't`);
-  } catch (e) {
+  } catch (_e) {
     console.log(`  ✓ "${invalid}" correctly rejected`);
   }
 }

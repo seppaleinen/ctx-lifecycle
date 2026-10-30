@@ -28,3 +28,35 @@
 - `tsc --noEmit`: passes
 - `bun test tests/unit/`: 26/26 passing
 - `bun build src/index.ts --outdir=dist --target=bun`: succeeds
+
+## [Post-Mortem Follow-up] — 2026-10-30
+
+### Changed
+
+- **Summary generator types** (`src/summary-generator.ts`): `generateSummary` and `addSummaryToPool` accept `StateMachineState` enum instead of loose `string`
+- **Plugin entry logging** (`src/index.ts`): Added `console.debug` transition logging (`fromState → toState`) in both `/transition` handler and auto-transition path
+- **Test casts removed** (`tests/unit/summary.test.ts`, `tests/manual-verification.ts`): 7 `as any` casts eliminated; tests now use enum values directly
+
+### Added
+
+- **ESLint configuration** (`eslint.config.js`): ESLint 10 flat config with `no-explicit-any` and `no-unused-vars` as errors
+- **Integration tests** (`tests/integration/hooks.test.ts`): 9 tests exercising the real `plugin.setup(ctx)` with an instrumented context — covers `ctx.session.hook('context')` ContextMessage[]→Message[] conversion and `ctx.tool.hook('execute.before')` bash detection + auto-transition
+- **Verify script** (`package.json`): `"verify": "tsc --noEmit && bun test tests/unit/ && bun build src/index.ts --outdir=dist --target=bun"`
+
+### Removed
+
+- **Vitest config** (`vitest.config.ts`): Deleted; no vitest dependency exists, project uses `bun test`
+- **Legacy ESLint config** (`.eslintrc.json`): Deleted; superseded by flat config
+
+### Security
+
+- **LOW advisory** (accepted risk): Bash command string interpolated into context-pool system message without sanitization. Accepted for single-user local deployment; not fixed.
+
+### Build Status
+
+- `tsc --noEmit`: passes
+- `bun test tests/unit/`: 26/26 passing
+- `bun test tests/integration/`: 9/9 passing
+- `bun run verify`: green
+- `eslint src/`: clean
+- `bun build src/index.ts --outdir=dist --target=bun`: succeeds (294 modules → dist/index.js)
