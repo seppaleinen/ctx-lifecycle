@@ -19,19 +19,13 @@ const POOL_NAME_MAP: Record<PoolID, string> = {
   [PoolID.TESTING]: 'Testing'
 };
 
-/** Category priority for ordering retained items (lower = earlier). */
-const CATEGORY_PRIORITY: Record<RetainedItemCategory, number> = {
-  [RetainedItemCategory.ACCEPTANCE]: 0,
-  [RetainedItemCategory.REQUIREMENT]: 1,
-  [RetainedItemCategory.ARCHITECTURE]: 2,
-  [RetainedItemCategory.RESEARCH]: 3
-};
-
 /**
  * Deterministic pattern table (contract §3.2). All patterns are case-insensitive
  * and linear (no catastrophic backtracking). "starts-with" patterns are anchored
  * to the effective text; "contains" patterns may match anywhere in it.
- * Category priority: ACCEPTANCE → REQUIREMENT → ARCHITECTURE → RESEARCH.
+ * Category priority is the ARRAY ORDER — ACCEPTANCE → REQUIREMENT →
+ * ARCHITECTURE → RESEARCH — and CATEGORY_PRIORITY is derived from it so the
+ * table and the sort can never disagree.
  */
 const CATEGORY_PATTERNS: {
   category: RetainedItemCategory;
@@ -71,10 +65,22 @@ const CATEGORY_PATTERNS: {
   }
 ];
 
+/** Category priority derived from CATEGORY_PATTERNS order (lower = earlier). */
+const CATEGORY_PRIORITY: Record<RetainedItemCategory, number> =
+  CATEGORY_PATTERNS.reduce<Record<RetainedItemCategory, number>>((acc, { category }, index) => {
+    acc[category] = index;
+    return acc;
+  }, {} as Record<RetainedItemCategory, number>);
+
+/** Internal sort annotation: a classified line plus its source position. */
+interface Candidate extends RetainedContextItem {
+  messageIndex: number;
+}
+
 /** Minimum normalized length for a non-bullet line to be a candidate. */
 const NON_BULLET_MIN_LENGTH = 30;
-/** Max rendered item length (240 content chars + '…' = 241 when truncated). */
-const MAX_TEXT_LENGTH = 241;
+/** Max rendered item length: 240 content chars + '…' = 241 total when truncated. */
+const MAX_RETAINED_TEXT_LENGTH = 241;
 
 export class SummaryGenerator {
   private router: ContextRouter;
@@ -141,11 +147,12 @@ export class SummaryGenerator {
    * Pure function of input + config; no LLM, no I/O, no clock except capturedAt.
    */
   extractRetainedContext(sourcePoolId: PoolID, fromState: StateMachineState): RetainedContext {
+    const capturedAt = Date.now();
     const empty = (): RetainedContext => ({
       sourcePool: sourcePoolId,
       fromState,
       items: [],
-      capturedAt: Date.now()
+      capturedAt
     });
 
     if (!this.config.retention.enabled) {
@@ -158,19 +165,51 @@ export class SummaryGenerator {
       return empty();
     }
 
-    const { categories, confidenceFloor, maxItems } = this.config.retention;
-
-    interface Candidate extends RetainedContextItem {
-      messageIndex: number;
+    const candidates = this.collectCandidates(messages);
+    if (candidates.length === 0) {
+      return empty();
     }
+
+    const { maxItems } = this.config.retention;
+
+    // Stable sort: category priority first, then original chronology
+    // (message array index, then line number). Array.prototype.sort is stable.
+    candidates.sort((a, b) => {
+      const priority = CATEGORY_PRIORITY[a.category] - CATEGORY_PRIORITY[b.category];
+      if (priority !== 0) return priority;
+      if (a.messageIndex !== b.messageIndex) return a.messageIndex - b.messageIndex;
+      return a.sourceLine - b.sourceLine;
+    });
+
+    const items: RetainedContextItem[] = candidates.slice(0, maxItems).map(({ messageIndex: _mi, ...item }) => item);
+    return {
+      sourcePool: sourcePoolId,
+      fromState,
+      items,
+      capturedAt
+    };
+  }
+
+  /**
+   * One pass over the pool's messages: classify every candidate line against
+   * the pattern table, filter by enabled category + confidence floor, dedupe
+   * on normalized text (first occurrence wins). Returns plain
+   * `RetainedContextItem` objects annotated with their source position for
+   * later stable sorting. System-role messages are skipped — they are
+   * plugin-generated (summaries, prior retained blocks) and must never be
+   * re-extracted into their own output.
+   */
+  private collectCandidates(
+    messages: ContextMessage[],
+    overrides?: { categories?: RetainedItemCategory[]; confidenceFloor?: number }
+  ): Candidate[] {
+    const { categories, confidenceFloor } = { ...this.config.retention, ...overrides };
 
     const candidates: Candidate[] = [];
     const seen = new Set<string>();
 
     for (let messageIndex = 0; messageIndex < messages.length; messageIndex++) {
       const message = messages[messageIndex];
-      // system-role messages are plugin-generated (summaries, prior retained
-      // blocks) — excluded so we never extract our own output.
       if (message.role === 'system') {
         continue;
       }
@@ -222,22 +261,7 @@ export class SummaryGenerator {
       }
     }
 
-    // Stable sort: category priority first, then original chronology
-    // (message array index, then line number). Array.prototype.sort is stable.
-    candidates.sort((a, b) => {
-      const priority = CATEGORY_PRIORITY[a.category] - CATEGORY_PRIORITY[b.category];
-      if (priority !== 0) return priority;
-      if (a.messageIndex !== b.messageIndex) return a.messageIndex - b.messageIndex;
-      return a.sourceLine - b.sourceLine;
-    });
-
-    const items: RetainedContextItem[] = candidates.slice(0, maxItems).map(({ messageIndex: _mi, ...item }) => item);
-    return {
-      sourcePool: sourcePoolId,
-      fromState,
-      items,
-      capturedAt: Date.now()
-    };
+    return candidates;
   }
 
   /** Structural validation of a RetainedContext (defensive; extraction output always passes). */
@@ -246,7 +270,7 @@ export class SummaryGenerator {
       throw new Error('RetainedContext.items must be an array');
     }
     for (const item of retained.items) {
-      if (typeof item.text !== 'string' || item.text.length === 0 || item.text.length > 241) {
+      if (typeof item.text !== 'string' || item.text.length === 0 || item.text.length > MAX_RETAINED_TEXT_LENGTH) {
         throw new Error('RetainedContextItem.text must be a non-empty string of at most 241 chars');
       }
       if (typeof item.confidence !== 'number' || item.confidence < 0 || item.confidence > 1) {
@@ -307,10 +331,10 @@ export class SummaryGenerator {
     return text.replace(/\s+/g, ' ').trim();
   }
 
-  /** Truncate to MAX_TEXT_LENGTH (241) total: 240 content chars + '…' when cut. */
+  /** Truncate to MAX_RETAINED_TEXT_LENGTH (241) total: 240 content chars + '…' when cut. */
   private truncate(text: string): string {
-    if (text.length > MAX_TEXT_LENGTH) {
-      return `${text.slice(0, MAX_TEXT_LENGTH - 1)}…`;
+    if (text.length > MAX_RETAINED_TEXT_LENGTH) {
+      return `${text.slice(0, MAX_RETAINED_TEXT_LENGTH - 1)}…`;
     }
     return text;
   }

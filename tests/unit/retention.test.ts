@@ -188,97 +188,6 @@ describe('Retention extraction (SummaryGenerator.extractRetainedContext)', () =>
   });
 });
 
-describe('Retention validation (SummaryGenerator.validateRetainedContext)', () => {
-  let generator: SummaryGenerator;
-
-  beforeEach(() => {
-    generator = new SummaryGenerator(new ContextRouter());
-  });
-
-  const base = () => ({
-    sourcePool: PoolID.PLANNING,
-    fromState: StateMachineState.PLANNING,
-    items: [],
-    capturedAt: 0
-  });
-
-  it('accepts an empty-but-valid RetainedContext', () => {
-    expect(() => generator.validateRetainedContext(base())).not.toThrow();
-  });
-
-  it('rejects a non-array items field', () => {
-    expect(() => generator.validateRetainedContext({ ...base(), items: 'nope' as never })).toThrow(
-      'RetainedContext.items must be an array'
-    );
-  });
-
-  it('rejects an over-long text field', () => {
-    expect(() =>
-      generator.validateRetainedContext({
-        ...base(),
-        items: [{ category: RetainedItemCategory.REQUIREMENT, text: 'x'.repeat(242), confidence: 0.9, sourceMessageId: null, sourceLine: 1 }]
-      })
-    ).toThrow('RetainedContextItem.text must be a non-empty string of at most 241 chars');
-  });
-
-  it('rejects an out-of-range confidence', () => {
-    expect(() =>
-      generator.validateRetainedContext({
-        ...base(),
-        items: [{ category: RetainedItemCategory.REQUIREMENT, text: 'ok', confidence: 1.5, sourceMessageId: null, sourceLine: 1 }]
-      })
-    ).toThrow('RetainedContextItem.confidence must be a number between 0 and 1');
-  });
-
-  it('rejects an invalid category', () => {
-    expect(() =>
-      generator.validateRetainedContext({
-        ...base(),
-        items: [{ category: 'bogus' as never, text: 'ok', confidence: 0.9, sourceMessageId: null, sourceLine: 1 }]
-      })
-    ).toThrow('RetainedContextItem.category must be a RetainedItemCategory value');
-  });
-
-  it('rejects an invalid sourcePool/fromState/capturedAt', () => {
-    expect(() => generator.validateRetainedContext({ ...base(), sourcePool: 'bogus' as never })).toThrow(
-      'RetainedContext.<field> has an invalid value'
-    );
-  });
-});
-
-describe('Config merge (mergeConfig)', () => {
-  it('returns a fresh deep copy of defaults and never mutates DEFAULT_CONFIG', () => {
-    const merged = mergeConfig({ retention: { confidenceFloor: 0.8 } });
-    expect(merged).not.toBe(DEFAULT_CONFIG);
-    expect(merged.retention).not.toBe(DEFAULT_CONFIG.retention);
-    expect(merged.retention.confidenceFloor).toBe(0.8);
-    // Untouched retention fields fall back to defaults.
-    expect(merged.retention.enabled).toBe(DEFAULT_CONFIG.retention.enabled);
-    expect(merged.retention.maxItems).toBe(DEFAULT_CONFIG.retention.maxItems);
-    // The shared default is unmutated.
-    expect(DEFAULT_CONFIG.retention.confidenceFloor).toBe(0.4);
-  });
-
-  it('retention block deep-merges field by field', () => {
-    const merged = mergeConfig({
-      retention: {
-        enabled: false,
-        categories: [RetainedItemCategory.RESEARCH],
-        maxItems: 3,
-        confidenceFloor: 0.9,
-        evictSourcePool: false
-      }
-    });
-    expect(merged.retention).toEqual({
-      enabled: false,
-      categories: [RetainedItemCategory.RESEARCH],
-      maxItems: 3,
-      confidenceFloor: 0.9,
-      evictSourcePool: false
-    });
-  });
-});
-
 describe('Retention end-to-end carry-over (contract §7.2 test 11)', () => {
   it('planning pool → execution pool: header + retained block, source evicted, event carries items', () => {
     const router = new ContextRouter();
@@ -330,7 +239,7 @@ describe('Retention end-to-end carry-over (contract §7.2 test 11)', () => {
     expect(router.getPool(PoolID.PLANNING)!.messages).toHaveLength(0);
   });
 
-  it('same-pool round-trip (COMPLETE→PLANNING) does not duplicate the retained block', () => {
+  it('same-pool round-trip (COMPLETE→PLANNING) replaces, does not duplicate, the retained block', () => {
     const router = new ContextRouter();
     const generator = new SummaryGenerator(router);
     const stateMachine = new StateMachine();
@@ -353,18 +262,18 @@ describe('Retention end-to-end carry-over (contract §7.2 test 11)', () => {
     const countBefore = router.getPool(PoolID.PLANNING)!.messages.length;
 
     // Drive a COMPLETE→PLANNING transition through the same helper logic:
-    // extract from the shared planning pool, write the retained block, then
-    // apply the same-pool dedup guard (pop the trailing retained block before
-    // appending the new one). evictSourcePool must NOT fire for same-pool.
+    // extract from the shared planning pool, drop the PRE-EXISTING trailing
+    // retained block (dedup guard), write the new one, and never evict
+    // (evictSourcePool is guarded by fromPool !== toPool).
     const retained = generator.extractRetainedContext(PoolID.PLANNING, StateMachineState.PLANNING);
+    router.popRetainedBlock(PoolID.PLANNING);
     generator.writeRetainedContextToPool(StateMachineState.PLANNING, retained);
+
+    // Same-pool: no eviction — the pool still holds the original messages,
+    // the old retained block was replaced, and the new one is at the tail.
     const pool = router.getPool(PoolID.PLANNING)!;
-    const last = pool.messages[pool.messages.length - 1];
-    if (last.content.startsWith(RETAINED_CONTEXT_PREFIX)) {
-      pool.messages.pop();
-    }
-    // Same-pool: no eviction — the pool still holds the original messages.
     expect(pool.messages.length).toBe(countBefore);
+    expect(pool.messages[pool.messages.length - 1].content.startsWith(RETAINED_CONTEXT_PREFIX)).toBe(true);
 
     const event = stateMachine.transition(StateMachineState.PLANNING, '/transition planning', retained);
     expect(event.retained).toBeDefined();
@@ -430,7 +339,7 @@ describe('Retention validation (SummaryGenerator.validateRetainedContext)', () =
 });
 
 describe('Config merge (mergeConfig)', () => {
-  it('returns a fresh deep copy of defaults and never mutates DEFAULT_CONFIG', () => {
+  it('returns a fresh copy of defaults and never mutates DEFAULT_CONFIG', () => {
     const merged = mergeConfig({ retention: { confidenceFloor: 0.8 } });
     expect(merged).not.toBe(DEFAULT_CONFIG);
     expect(merged.retention).not.toBe(DEFAULT_CONFIG.retention);

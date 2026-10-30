@@ -118,9 +118,6 @@ export const SCHEMA_VERSION = 1;
 /** Exact prefix of the system message carrying retained items into the target pool. */
 export const RETAINED_CONTEXT_PREFIX = 'Context retained from ';
 
-/** Marker for the single 1-sentence header message (used by dedup guard). */
-export const SUMMARY_MESSAGE_PREFIX = 'Swapped to ';
-
 export const DEFAULT_CONFIG: ContextPagerConfig = {
   enabled: true,
   tokenCeiling: 25000,
@@ -159,28 +156,34 @@ export type PartialContextPagerConfig = Partial<Omit<ContextPagerConfig, 'retent
  * fall back wholesale to defaults when absent. Returns a fresh object so
  * callers cannot mutate the shared DEFAULT_CONFIG.
  */
+const POOL_KEYS: (keyof ContextPagerConfig['pools'])[] = ['global', 'planning', 'execution', 'testing'];
+const RETENTION_KEYS: (keyof RetentionConfig)[] = ['enabled', 'categories', 'maxItems', 'confidenceFloor', 'evictSourcePool'];
+
 export function mergeConfig(user: PartialContextPagerConfig | undefined): ContextPagerConfig {
-  const base: ContextPagerConfig = JSON.parse(JSON.stringify(DEFAULT_CONFIG)) as ContextPagerConfig;
+  // Shallow copy of the top level — every nested object touched below is
+  // re-spread into a fresh object, so the shared DEFAULT_CONFIG is never
+  // mutated and the deep clone is unnecessary.
+  const base: ContextPagerConfig = { ...DEFAULT_CONFIG };
   if (!user) {
     return base;
   }
   if (typeof user.enabled === 'boolean') base.enabled = user.enabled;
   if (typeof user.tokenCeiling === 'number') base.tokenCeiling = user.tokenCeiling;
   if (user.pools) {
-    base.pools = {
-      global: { ...base.pools.global, ...(user.pools.global ?? {}) },
-      planning: { ...base.pools.planning, ...(user.pools.planning ?? {}) },
-      execution: { ...base.pools.execution, ...(user.pools.execution ?? {}) },
-      testing: { ...base.pools.testing, ...(user.pools.testing ?? {}) }
-    };
+    base.pools = { ...base.pools };
+    for (const key of POOL_KEYS) {
+      base.pools[key] = { ...base.pools[key], ...(user.pools[key] ?? {}) };
+    }
   }
   if (user.retention) {
+    base.retention = { ...base.retention };
     const r = user.retention;
-    if (typeof r.enabled === 'boolean') base.retention.enabled = r.enabled;
-    if (Array.isArray(r.categories)) base.retention.categories = r.categories;
-    if (typeof r.maxItems === 'number') base.retention.maxItems = r.maxItems;
-    if (typeof r.confidenceFloor === 'number') base.retention.confidenceFloor = r.confidenceFloor;
-    if (typeof r.evictSourcePool === 'boolean') base.retention.evictSourcePool = r.evictSourcePool;
+    for (const key of RETENTION_KEYS) {
+      const value = r[key];
+      if (typeof value !== 'undefined') {
+        (base.retention as unknown as Record<string, unknown>)[key] = value;
+      }
+    }
   }
   return base;
 }

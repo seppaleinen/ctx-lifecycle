@@ -1,6 +1,6 @@
 import { Plugin } from '@opencode/plugin';
 import { Message } from '@opencode/ai/effect';
-import { StateMachineState, PoolID, STATE_TO_POOL, mergeConfig, RETAINED_CONTEXT_PREFIX } from './types.js';
+import { StateMachineState, PoolID, STATE_TO_POOL, mergeConfig } from './types.js';
 import { ContextRouter } from './router.js';
 import { SummaryGenerator } from './summary-generator.js';
 import { StateMachine } from './state-machine.js';
@@ -31,23 +31,23 @@ export default Plugin.define({
         const toPool = STATE_TO_POOL[toState] as PoolID;
         const retained = summaryGenerator.extractRetainedContext(fromPool, fromState);
         summaryGenerator.validateRetainedContext(retained);
-        if (summaryGenerator.writeRetainedContextToPool(toState, retained)) {
-          // Same-pool dedup guard: if the source pool is the SAME as the target
-          // pool (e.g. COMPLETE→PLANNING both map to the planning pool) and it
-          // already ends with the retained block, drop it so a round-trip
-          // doesn't accumulate duplicates.
-          const pool = router.getPool(toPool)!;
-          const last = pool.messages[pool.messages.length - 1];
-          if (fromPool === toPool && last && last.content.startsWith(RETAINED_CONTEXT_PREFIX)) {
-            pool.messages.pop();
-          }
+
+        // Same-pool dedup guard: when the source pool IS the target pool
+        // (e.g. COMPLETE→PLANNING both map to the planning pool), drop the
+        // PRE-EXISTING trailing retained block before appending the new one,
+        // so a round-trip replaces instead of accumulating duplicates.
+        if (fromPool === toPool) {
+          router.popRetainedBlock(toPool);
         }
+        const wrote = summaryGenerator.writeRetainedContextToPool(toState, retained);
+
         if (config.retention.evictSourcePool && fromPool !== toPool) {
           router.clearPool(fromPool);
         }
+
         stateMachine!.transition(toState, trigger, retained.items.length > 0 ? retained : undefined);
-        console.debug(`[context-pager] Transition: ${fromState} -> ${toState} (${trigger})` +
-          (retained.items.length > 0 ? ` [retained ${retained.items.length} items]` : ''));
+        const suffix = wrote && retained.items.length > 0 ? ` [retained ${retained.items.length} items]` : '';
+        console.debug(`[context-pager] Transition: ${fromState} -> ${toState} (${trigger})${suffix}`);
       } else {
         stateMachine!.transition(toState, trigger);
         console.debug(`[context-pager] Transition: ${fromState} -> ${toState} (${trigger})`);
