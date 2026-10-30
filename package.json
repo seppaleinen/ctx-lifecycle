@@ -1,0 +1,23 @@
+{
+  "name": "ctx-lifecycle",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "context-pager OpenCode V2 plugin for ctx-lifecycle",
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "scripts": {
+    "build": "bun build src/index.ts --outdir=dist --target=bun",
+    "test": "bun test tests/unit/",
+    "lint": "bunx eslint src/ tests/",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencode/plugin": "^2.1.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/bun": "^1.0.0"
+  }
+}

@@ -1,0 +1,10 @@
+# Build artifacts
+dist/
+
+# Dependencies
+node_modules/
+
+# Generated stack context
+.agents/
+
+# Bun lockfile is committed; nothing else here
