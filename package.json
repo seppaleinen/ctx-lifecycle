@@ -9,10 +9,12 @@
   },
   "scripts": {
     "build": "bun build src/index.ts --outdir=dist --target=bun",
-    "test": "bun test tests/unit/",
+    "test": "bun test tests/",
+    "test:unit": "bun test tests/unit/",
+    "test:integration": "bun test tests/integration/",
     "lint": "bunx eslint src/ tests/",
     "typecheck": "tsc --noEmit",
-    "verify": "tsc --noEmit && bun test tests/unit/ && bun build src/index.ts --outdir=dist --target=bun"
+    "verify": "tsc --noEmit && bunx eslint src/ tests/ && bun test tests/ && bun build src/index.ts --outdir=dist --target=bun"
   },
   "dependencies": {
     "@opencode/plugin": "^2.1.1"
