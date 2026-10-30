@@ -369,4 +369,74 @@ describe('Config merge (mergeConfig)', () => {
       evictSourcePool: false
     });
   });
+
+  // SECURITY: Type safety tests for mergeConfig
+  it('ignores invalid confidenceFloor types (string, null, object)', () => {
+    const merged = mergeConfig({ retention: { confidenceFloor: '0.8' as never } });
+    expect(merged.retention.confidenceFloor).toBe(DEFAULT_CONFIG.retention.confidenceFloor);
+    
+    const merged2 = mergeConfig({ retention: { confidenceFloor: null as never } });
+    expect(merged2.retention.confidenceFloor).toBe(DEFAULT_CONFIG.retention.confidenceFloor);
+    
+    const merged3 = mergeConfig({ retention: { confidenceFloor: {} as never } });
+    expect(merged3.retention.confidenceFloor).toBe(DEFAULT_CONFIG.retention.confidenceFloor);
+  });
+
+  it('ignores invalid maxItems types and out-of-range values', () => {
+    const merged = mergeConfig({ retention: { maxItems: '5' as never } });
+    expect(merged.retention.maxItems).toBe(DEFAULT_CONFIG.retention.maxItems);
+    
+    const merged2 = mergeConfig({ retention: { maxItems: 0 } });
+    expect(merged2.retention.maxItems).toBe(DEFAULT_CONFIG.retention.maxItems);  // 0 is invalid (must be >= 1)
+    
+    const merged3 = mergeConfig({ retention: { maxItems: 1001 } });
+    expect(merged3.retention.maxItems).toBe(DEFAULT_CONFIG.retention.maxItems);  // > 1000 rejected
+    
+    // Valid value accepted
+    const merged4 = mergeConfig({ retention: { maxItems: 50 } });
+    expect(merged4.retention.maxItems).toBe(50);
+  });
+
+  it('ignores invalid confidenceFloor out-of-range values', () => {
+    const merged = mergeConfig({ retention: { confidenceFloor: -0.1 } });
+    expect(merged.retention.confidenceFloor).toBe(DEFAULT_CONFIG.retention.confidenceFloor);
+    
+    const merged2 = mergeConfig({ retention: { confidenceFloor: 1.5 } });
+    expect(merged2.retention.confidenceFloor).toBe(DEFAULT_CONFIG.retention.confidenceFloor);
+    
+    // Valid edge cases accepted
+    const merged3 = mergeConfig({ retention: { confidenceFloor: 0 } });
+    expect(merged3.retention.confidenceFloor).toBe(0);
+    
+    const merged4 = mergeConfig({ retention: { confidenceFloor: 1 } });
+    expect(merged4.retention.confidenceFloor).toBe(1);
+  });
+
+  it('ignores invalid categories array values', () => {
+    const merged = mergeConfig({ retention: { categories: ['invalid' as never] } });
+    expect(merged.retention.categories).toEqual(DEFAULT_CONFIG.retention.categories);
+    
+    // Partially valid categories rejected entirely
+    const merged2 = mergeConfig({ retention: { categories: [RetainedItemCategory.REQUIREMENT, 'invalid' as never] } });
+    expect(merged2.retention.categories).toEqual(DEFAULT_CONFIG.retention.categories);
+    
+    // Empty array clears categories (as per contract)
+    const merged3 = mergeConfig({ retention: { categories: [] } });
+    expect(merged3.retention.categories).toEqual([]);
+  });
+
+  it('ignores invalid enabled and evictSourcePool types (accepts only booleans)', () => {
+    const merged = mergeConfig({ retention: { enabled: 'true' as never } });
+    expect(merged.retention.enabled).toBe(DEFAULT_CONFIG.retention.enabled);
+    
+    const merged2 = mergeConfig({ retention: { evictSourcePool: 1 as never } });
+    expect(merged2.retention.evictSourcePool).toBe(DEFAULT_CONFIG.retention.evictSourcePool);
+    
+    // Valid booleans accepted
+    const merged3 = mergeConfig({ retention: { enabled: false } });
+    expect(merged3.retention.enabled).toBe(false);
+    
+    const merged4 = mergeConfig({ retention: { evictSourcePool: false } });
+    expect(merged4.retention.evictSourcePool).toBe(false);
+  });
 });

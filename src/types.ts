@@ -157,7 +157,6 @@ export type PartialContextPagerConfig = Partial<Omit<ContextPagerConfig, 'retent
  * callers cannot mutate the shared DEFAULT_CONFIG.
  */
 const POOL_KEYS: (keyof ContextPagerConfig['pools'])[] = ['global', 'planning', 'execution', 'testing'];
-const RETENTION_KEYS: (keyof RetentionConfig)[] = ['enabled', 'categories', 'maxItems', 'confidenceFloor', 'evictSourcePool'];
 
 export function mergeConfig(user: PartialContextPagerConfig | undefined): ContextPagerConfig {
   // Shallow copy of the top level — every nested object touched below is
@@ -178,12 +177,21 @@ export function mergeConfig(user: PartialContextPagerConfig | undefined): Contex
   if (user.retention) {
     base.retention = { ...base.retention };
     const r = user.retention;
-    for (const key of RETENTION_KEYS) {
-      const value = r[key];
-      if (typeof value !== 'undefined') {
-        (base.retention as unknown as Record<string, unknown>)[key] = value;
-      }
+    // Type-safe merging with validation for retention fields
+    if (typeof r.enabled === 'boolean') base.retention.enabled = r.enabled;
+    if (
+      Array.isArray(r.categories) &&
+      r.categories.every((c) => Object.values(RetainedItemCategory).includes(c))
+    ) {
+      base.retention.categories = r.categories;
     }
+    if (typeof r.maxItems === 'number' && r.maxItems >= 1 && r.maxItems <= 1000) {
+      base.retention.maxItems = r.maxItems;
+    }
+    if (typeof r.confidenceFloor === 'number' && r.confidenceFloor >= 0 && r.confidenceFloor <= 1) {
+      base.retention.confidenceFloor = r.confidenceFloor;
+    }
+    if (typeof r.evictSourcePool === 'boolean') base.retention.evictSourcePool = r.evictSourcePool;
   }
   return base;
 }
