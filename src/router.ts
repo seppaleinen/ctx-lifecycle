@@ -40,4 +40,12 @@ export class ContextRouter {
     }
     pool.messages.push(message);
   }
+
+  /** Removes all messages from a pool. No-op when the pool is unknown. */
+  clearPool(poolId: PoolID): void {
+    const pool = this.pools.get(poolId);
+    if (pool) {
+      pool.messages.length = 0;
+    }
+  }
 }

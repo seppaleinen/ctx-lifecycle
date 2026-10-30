@@ -1,4 +1,4 @@
-import { StateMachineState, TransitionEvent } from './types.js';
+import { StateMachineState, TransitionEvent, RetainedContext } from './types.js';
 
 export class StateMachine {
   private currentState: StateMachineState;
@@ -23,7 +23,7 @@ export class StateMachine {
     return allowedStates.includes(toState);
   }
 
-  transition(targetState: StateMachineState, trigger: string): TransitionEvent {
+  transition(targetState: StateMachineState, trigger: string, retained?: RetainedContext): TransitionEvent {
     if (!this.canTransition(targetState)) {
       throw new Error(
         `Invalid transition from ${this.currentState} to ${targetState}. ` +
@@ -32,12 +32,9 @@ export class StateMachine {
     }
 
     const fromState = this.currentState;
-    const event: TransitionEvent = {
-      fromState,
-      toState: targetState,
-      trigger,
-      timestamp: Date.now()
-    };
+    const event: TransitionEvent = retained
+      ? { fromState, toState: targetState, trigger, timestamp: Date.now(), retained }
+      : { fromState, toState: targetState, trigger, timestamp: Date.now() };
 
     this.currentState = targetState;
 

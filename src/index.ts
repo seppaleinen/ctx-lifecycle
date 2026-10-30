@@ -1,6 +1,6 @@
 import { Plugin } from '@opencode/plugin';
 import { Message } from '@opencode/ai/effect';
-import { StateMachineState } from './types.js';
+import { StateMachineState, PoolID, STATE_TO_POOL, mergeConfig, RETAINED_CONTEXT_PREFIX } from './types.js';
 import { ContextRouter } from './router.js';
 import { SummaryGenerator } from './summary-generator.js';
 import { StateMachine } from './state-machine.js';
@@ -11,8 +11,48 @@ export default Plugin.define({
   id: 'context-pager',
   setup: async (ctx) => {
     const router = new ContextRouter();
-    const summaryGenerator = new SummaryGenerator(router);
+    const config = mergeConfig(undefined);
+    const summaryGenerator = new SummaryGenerator(router, config);
     stateMachine = new StateMachine();
+
+    /**
+     * Unified transition helper: 1-sentence header summary → structured
+     * retained context → (optionally) evict the source pool → transition.
+     * Used by both the /transition command and the test-command hook so the
+     * two paths can never drift.
+     */
+    const applyTransition = (toState: StateMachineState, trigger: string): void => {
+      const fromState = stateMachine!.getCurrentState();
+      const summary = summaryGenerator.generateSummary(toState, trigger);
+      summaryGenerator.addSummaryToPool(toState, summary);
+
+      if (config.retention.enabled) {
+        const fromPool = STATE_TO_POOL[fromState] as PoolID;
+        const toPool = STATE_TO_POOL[toState] as PoolID;
+        const retained = summaryGenerator.extractRetainedContext(fromPool, fromState);
+        summaryGenerator.validateRetainedContext(retained);
+        if (summaryGenerator.writeRetainedContextToPool(toState, retained)) {
+          // Same-pool dedup guard: if the source pool is the SAME as the target
+          // pool (e.g. COMPLETE→PLANNING both map to the planning pool) and it
+          // already ends with the retained block, drop it so a round-trip
+          // doesn't accumulate duplicates.
+          const pool = router.getPool(toPool)!;
+          const last = pool.messages[pool.messages.length - 1];
+          if (fromPool === toPool && last && last.content.startsWith(RETAINED_CONTEXT_PREFIX)) {
+            pool.messages.pop();
+          }
+        }
+        if (config.retention.evictSourcePool && fromPool !== toPool) {
+          router.clearPool(fromPool);
+        }
+        stateMachine!.transition(toState, trigger, retained.items.length > 0 ? retained : undefined);
+        console.debug(`[context-pager] Transition: ${fromState} -> ${toState} (${trigger})` +
+          (retained.items.length > 0 ? ` [retained ${retained.items.length} items]` : ''));
+      } else {
+        stateMachine!.transition(toState, trigger);
+        console.debug(`[context-pager] Transition: ${fromState} -> ${toState} (${trigger})`);
+      }
+    };
 
     await ctx.session.hook('context', (event) => {
       const targetState = stateMachine?.getCurrentState();
@@ -48,10 +88,7 @@ export default Plugin.define({
         if (isTestCommand && stateMachine?.getCurrentState() === StateMachineState.CODING) {
           try {
             const trigger = `Test command detected: ${command}`;
-            const transitionEvent = stateMachine.transition(StateMachineState.DEBUGGING, trigger);
-            console.debug(`[context-pager] Auto-transition: ${transitionEvent.fromState} -> ${transitionEvent.toState} (${trigger})`);
-            const summary = summaryGenerator.generateSummary(StateMachineState.DEBUGGING, trigger);
-            summaryGenerator.addSummaryToPool(StateMachineState.DEBUGGING, summary);
+            applyTransition(StateMachineState.DEBUGGING, trigger);
           } catch (e) {
             console.error('Auto-transition failed:', e);
           }
