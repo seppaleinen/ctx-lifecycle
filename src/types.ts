@@ -1,5 +1,6 @@
 export enum PoolID {
   GLOBAL = 'global',
+  PROJECT = 'project',
   PLANNING = 'planning',
   EXECUTION = 'execution',
   TESTING = 'testing'
@@ -11,6 +12,10 @@ export interface ContextMessage {
   role: 'system' | 'user' | 'assistant'
   content: string
   createdAt?: number
+  /** When true, the message is exempt from LRU eviction (e.g. pinned requirements). */
+  critical?: boolean
+  /** Wall-clock ms of the last explicit or implicit access. Used by LRU eviction. */
+  accessedAt?: number
 }
 
 // Pool types
@@ -74,6 +79,7 @@ export interface PersistedPools {
   updatedAt: number;
   pools: {
     global: ContextPool;
+    project: ContextPool;
     planning: ContextPool;
     execution: ContextPool;
     testing: ContextPool;
@@ -96,8 +102,11 @@ export interface RetentionConfig {
 export interface ContextPagerConfig {
   enabled: boolean;
   tokenCeiling: number;
+  /** Hard token ceiling for the Global pool, enforced via LRU eviction. */
+  globalMaxTokens: number;
   pools: {
     global: { maxTokens: number };
+    project: { maxTokens: number };
     planning: { maxTokens: number };
     execution: { maxTokens: number };
     testing: { maxTokens: number };
@@ -121,8 +130,10 @@ export const RETAINED_CONTEXT_PREFIX = 'Context retained from ';
 export const DEFAULT_CONFIG: ContextPagerConfig = {
   enabled: true,
   tokenCeiling: 25000,
+  globalMaxTokens: 5000,
   pools: {
     global: { maxTokens: 5000 },
+    project: { maxTokens: 3000 },
     planning: { maxTokens: 8000 },
     execution: { maxTokens: 10000 },
     testing: { maxTokens: 5000 }
@@ -156,7 +167,7 @@ export type PartialContextPagerConfig = Partial<Omit<ContextPagerConfig, 'retent
  * fall back wholesale to defaults when absent. Returns a fresh object so
  * callers cannot mutate the shared DEFAULT_CONFIG.
  */
-const POOL_KEYS: (keyof ContextPagerConfig['pools'])[] = ['global', 'planning', 'execution', 'testing'];
+const POOL_KEYS: (keyof ContextPagerConfig['pools'])[] = ['global', 'project', 'planning', 'execution', 'testing'];
 
 export function mergeConfig(user: PartialContextPagerConfig | undefined): ContextPagerConfig {
   // Shallow copy of the top level — every nested object touched below is
@@ -168,6 +179,9 @@ export function mergeConfig(user: PartialContextPagerConfig | undefined): Contex
   }
   if (typeof user.enabled === 'boolean') base.enabled = user.enabled;
   if (typeof user.tokenCeiling === 'number') base.tokenCeiling = user.tokenCeiling;
+  if (typeof user.globalMaxTokens === 'number' && user.globalMaxTokens >= 0) {
+    base.globalMaxTokens = user.globalMaxTokens;
+  }
   if (user.pools) {
     base.pools = { ...base.pools };
     for (const key of POOL_KEYS) {

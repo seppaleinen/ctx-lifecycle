@@ -31,6 +31,34 @@ const config = mergeConfig({
 });
 ```
 
+### Global Pool: LRU Eviction & Project Pool
+
+The Global pool is long-lived and shared across sessions, so it has no
+state-transition eviction path. Without a cap it grows without bound — that's
+why `globalMaxTokens` exists. Every time the context hook fires, the router
+runs `enforceCeiling(PoolID.GLOBAL, config.globalMaxTokens)` and evicts
+least-recently-used messages until the pool is back under the ceiling.
+
+A **Project pool** (`PoolID.PROJECT`) rides alongside Global on every state. It
+holds project-scoped context — issue notes, pinned requirements, scratch work —
+and gets its own ceiling via `pools.project.maxTokens`. Messages flagged
+`critical: true` are never evicted, so a pinned requirement survives LRU
+trimming. Use the `/new-issue` command to clear the Project pool when starting
+a fresh issue.
+
+| Key | Default | Semantics |
+|-----|---------|-----------|
+| `globalMaxTokens` | `5000` | Hard token ceiling for the Global pool (LRU eviction) |
+| `pools.project.maxTokens` | `3000` | Hard token ceiling for the Project pool (LRU eviction) |
+
+```ts
+import { mergeConfig } from './src/types.js';
+const config = mergeConfig({
+  globalMaxTokens: 3000,
+  pools: { project: { maxTokens: 2000 } }
+});
+```
+
 ### Worked example retained block
 
 ```

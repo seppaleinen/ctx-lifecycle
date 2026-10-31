@@ -133,6 +133,7 @@
         }
 
         .pool-box.global { border-left-color: #f59e0b; }
+        .pool-box.project { border-left-color: #f472b6; }
         .pool-box.planning { border-left-color: var(--primary); }
         .pool-box.execution { border-left-color: var(--secondary); }
         .pool-box.testing { border-left-color: var(--accent); }
@@ -363,7 +364,7 @@
     <div class="container">
         <header>
             <h1>🚀 ctx-lifecycle</h1>
-            <p>Intelligent Context Management for OpenCode V2 — Managing conversation history across four lifecycle phases</p>
+            <p>Intelligent Context Management for OpenCode V2 — Managing conversation history across five context pools</p>
         </header>
 
         <div class="divider"></div>
@@ -392,11 +393,15 @@
 
             <div class="two-column">
                 <div>
-                    <h3 style="color: var(--text); margin-bottom: 15px;">Our Solution: 4 Context Pools</h3>
+                    <h3 style="color: var(--text); margin-bottom: 15px;">Our Solution: 5 Context Pools</h3>
                     <div class="pool-diagram">
                         <div class="pool-box global">
                             <h3>🌍 Global</h3>
-                            <div class="pool-desc">System knowledge (never deleted)</div>
+                            <div class="pool-desc">System knowledge (LRU-capped, never fully deleted)</div>
+                        </div>
+                        <div class="pool-box project">
+                            <h3>📌 Project</h3>
+                            <div class="pool-desc">Issue-scoped notes (cleared with /new-issue, LRU-capped)</div>
                         </div>
                         <div class="arrow">⟶</div>
                         <div class="pool-box planning">
@@ -529,6 +534,14 @@
                         <h3>🧭 Clear Boundaries</h3>
                         <p>Each phase has its own context - clean separation of concerns</p>
                     </div>
+                    <div class="feature-card">
+                        <h3>🗑️ LRU Eviction</h3>
+                        <p>Global and Project pools are capped by token ceiling; least-recently-used messages are evicted first. Critical (pinned) messages are never evicted.</p>
+                    </div>
+                    <div class="feature-card">
+                        <h3>📌 Project-Scoped Context</h3>
+                        <p>A dedicated Project pool rides alongside Global on every state. Clear it with <code>/new-issue</code> when starting a fresh issue.</p>
+                    </div>
                 </div>
             </div>
 
@@ -568,11 +581,14 @@
                         <div style="display: inline-block; margin: 0 10px;">
                             <div class="arch-node pool">Global Pool</div>
                             <div style="margin-top: 10px;">
-                                <div class="arch-node pool">Planning Pool</div>
+                                <div class="arch-node pool">Project Pool</div>
                                 <div style="display: inline-block; margin: 10px 10px; margin-top: 0;">
-                                    <div class="arch-node pool">Execution Pool</div>
+                                    <div class="arch-node pool">Planning Pool</div>
                                     <div style="display: inline-block; margin-left: 10px;">
-                                        <div class="arch-node pool">Testing Pool</div>
+                                        <div class="arch-node pool">Execution Pool</div>
+                                        <div style="display: inline-block; margin-left: 10px;">
+                                            <div class="arch-node pool">Testing Pool</div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

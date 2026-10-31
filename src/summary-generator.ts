@@ -14,6 +14,7 @@ import { ContextRouter } from './router.js';
 
 const POOL_NAME_MAP: Record<PoolID, string> = {
   [PoolID.GLOBAL]: 'Global',
+  [PoolID.PROJECT]: 'Project',
   [PoolID.PLANNING]: 'Planning',
   [PoolID.EXECUTION]: 'Execution',
   [PoolID.TESTING]: 'Testing'

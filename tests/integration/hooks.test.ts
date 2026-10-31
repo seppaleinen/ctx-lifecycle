@@ -90,12 +90,15 @@ describe('context-pager plugin hooks (real setup, instrumented context)', () => 
 
   const transition = (text: string) => commandDef.execute({ sessionID: 'ses_test', prompt: { text } });
 
-  it('registers the context, execute.before hooks and the transition command', () => {
+  it('registers the context, execute.before hooks and the transition + new-issue commands', () => {
     expect(ctx.hooks.has('context')).toBe(true);
     expect(ctx.hooks.has('execute.before')).toBe(true);
-    expect(ctx.commands).toHaveLength(1);
+    expect(ctx.commands).toHaveLength(2);
     expect(commandDef.name).toBe('transition');
     expect(typeof commandDef.execute).toBe('function');
+    const newIssueDef = ctx.commands.find((c) => c.name === 'new-issue');
+    expect(newIssueDef).toBeDefined();
+    expect(typeof newIssueDef!.execute).toBe('function');
   });
 
   it('context hook: with empty pools, replaces event.messages with the (empty) active set', () => {
