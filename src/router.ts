@@ -61,11 +61,6 @@ export class ContextRouter {
     }
   }
 
-  /** Convenience: clear the Project pool specifically (used by /new-issue). */
-  clearProjectPool(): void {
-    this.clearPool(PoolID.PROJECT);
-  }
-
   /**
    * Remove the last message from a pool. Returns the removed message, or
    * `undefined` when the pool is missing or already empty. Used by the
@@ -101,23 +96,6 @@ export class ContextRouter {
   }
 
   /**
-   * Record an explicit access on a message so its `accessedAt` reflects the
-   * most recent use. Used by callers that surface a specific message (e.g.
-   * a pinned requirement) to keep it warm in the LRU ordering.
-   * No-op when the pool or message is missing.
-   */
-  touchMessage(poolId: PoolID, messageId: string): void {
-    const pool = this.pools.get(poolId);
-    if (!pool) {
-      return;
-    }
-    const msg = pool.messages.find((m) => m.id === messageId);
-    if (msg) {
-      msg.accessedAt = Date.now();
-    }
-  }
-
-  /**
    * Enforce a hard token ceiling on a pool using LRU eviction.
    *
    * - `critical` messages are NEVER evicted (pinned requirements survive).
@@ -138,39 +116,29 @@ export class ContextRouter {
       return;
     }
 
-    // Partition: critical messages stay, everyone else is a candidate for eviction.
-    const keep: ContextMessage[] = [];
-    const candidates: ContextMessage[] = [];
-    for (const msg of pool.messages) {
-      if (msg.critical) {
-        keep.push(msg);
-      } else {
-        candidates.push(msg);
+    // Simple LRU loop: drop oldest non-critical messages until under ceiling.
+    // Critical messages are skipped (never evicted).
+    while (pool.messages.length > 0 && this.estimateTokens(pool.messages) > maxTokens) {
+      // Find the least recently used message that is NOT critical.
+      let lruIdx = -1;
+      let lruAccessedAt = Infinity;
+      for (let i = 0; i < pool.messages.length; i++) {
+        const msg = pool.messages[i];
+        if (!msg.critical) {
+          const accessedAt = msg.accessedAt ?? 0;
+          if (accessedAt < lruAccessedAt) {
+            lruAccessedAt = accessedAt;
+            lruIdx = i;
+          }
+        }
       }
-    }
-
-    // LRU order: oldest accessedAt first. `accessedAt` is always set by
-    // addMessage(), so this is a total order on the candidate set.
-    candidates.sort((a, b) => (a.accessedAt ?? 0) - (b.accessedAt ?? 0));
-
-    const keepTokens = this.estimateTokens(keep);
-    let budget = maxTokens - keepTokens;
-    const survivors: ContextMessage[] = [];
-    for (const msg of candidates) {
-      const cost = this.estimateTokens([msg]);
-      if (cost <= budget) {
-        survivors.push(msg);
-        budget -= cost;
+      // If all messages are critical, we can't evict anything; stop.
+      if (lruIdx === -1) {
+        break;
       }
-      // Once budget is exhausted, remaining candidates are dropped.
+      // Remove the LRU non-critical message.
+      pool.messages.splice(lruIdx, 1);
     }
-
-    // Preserve original ordering of survivors for stable output. Use object
-    // identity (not `id`) so messages without an `id` field are handled
-    // correctly — every survivor is a reference pulled from the original
-    // `pool.messages` array.
-    const survivorSet = new Set(survivors);
-    pool.messages = pool.messages.filter((m) => survivorSet.has(m));
   }
 
   /**

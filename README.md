@@ -35,9 +35,9 @@ const config = mergeConfig({
 
 The Global pool is long-lived and shared across sessions, so it has no
 state-transition eviction path. Without a cap it grows without bound — that's
-why `globalMaxTokens` exists. Every time the context hook fires, the router
-runs `enforceCeiling(PoolID.GLOBAL, config.globalMaxTokens)` and evicts
-least-recently-used messages until the pool is back under the ceiling.
+why `pools.global.maxTokens` exists. Every time the context hook fires, the
+router runs `enforceCeiling(PoolID.GLOBAL, config.pools.global.maxTokens)` and
+evicts least-recently-used messages until the pool is back under the ceiling.
 
 A **Project pool** (`PoolID.PROJECT`) rides alongside Global on every state. It
 holds project-scoped context — issue notes, pinned requirements, scratch work —
@@ -48,14 +48,13 @@ a fresh issue.
 
 | Key | Default | Semantics |
 |-----|---------|-----------|
-| `globalMaxTokens` | `5000` | Hard token ceiling for the Global pool (LRU eviction) |
+| `pools.global.maxTokens` | `5000` | Hard token ceiling for the Global pool (LRU eviction) |
 | `pools.project.maxTokens` | `3000` | Hard token ceiling for the Project pool (LRU eviction) |
 
 ```ts
 import { mergeConfig } from './src/types.js';
 const config = mergeConfig({
-  globalMaxTokens: 3000,
-  pools: { project: { maxTokens: 2000 } }
+  pools: { global: { maxTokens: 3000 }, project: { maxTokens: 2000 } }
 });
 ```
 

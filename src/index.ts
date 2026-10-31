@@ -60,7 +60,7 @@ export default Plugin.define({
         // Enforce token ceilings before exposing context to the model.
         // Global and Project pools are long-lived and accumulate without a
         // state-transition eviction path, so they need explicit LRU caps.
-        router.enforceCeiling(PoolID.GLOBAL, config.globalMaxTokens);
+        router.enforceCeiling(PoolID.GLOBAL, config.pools.global.maxTokens);
         router.enforceCeiling(PoolID.PROJECT, config.pools.project.maxTokens);
 
         const activeMessages = router.getActivePools(targetState);
@@ -132,7 +132,7 @@ export default Plugin.define({
           if (!router) {
             return;
           }
-          router.clearProjectPool();
+          router.clearPool(PoolID.PROJECT);
           console.debug('[context-pager] Cleared Project pool (new issue)');
         }
       });
