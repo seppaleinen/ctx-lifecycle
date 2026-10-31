@@ -58,7 +58,7 @@ const config = mergeConfig({
 });
 ```
 
-### Worked example retained block
+### Worked example carry-over
 
 ```
 Context retained from Planning Pool:
