@@ -1,4 +1,4 @@
-import { PoolID, StateMachineState, ContextPool, ContextMessage, STATE_TO_POOL, RETAINED_CONTEXT_PREFIX } from './types.js';
+import { PoolID, StateMachineState, ContextPool, ContextMessage, STATE_TO_POOL, RETAINED_CONTEXT_PREFIX, EvictedBatch, RetainedContext } from './types.js';
 
 export class ContextRouter {
   private pools: Map<PoolID, ContextPool>;
@@ -58,6 +58,101 @@ export class ContextRouter {
     const pool = this.pools.get(poolId);
     if (pool) {
       pool.messages.length = 0;
+    }
+  }
+
+  /**
+   * Clear pool and return the cleared messages for journaling.
+   * Used by Phase 3 to capture evicted content before removal.
+   */
+  clearPoolWithResult(poolId: PoolID, state: StateMachineState, trigger: string, retained?: unknown): EvictedBatch | null {
+    const pool = this.pools.get(poolId);
+    if (!pool || pool.messages.length === 0) {
+      return null;
+    }
+    const messages = [...pool.messages];
+    pool.messages.length = 0;
+    return {
+      poolId,
+      state,
+      messages,
+      trigger,
+      retained: retained as RetainedContext | undefined
+    };
+  }
+
+  /**
+   * Enforce ceiling and return evicted messages for journaling.
+   * Returns array of evicted batches (one per eviction cycle).
+   */
+  enforceCeilingWithResult(poolId: PoolID, maxTokens: number, state: StateMachineState, trigger: string): EvictedBatch[] {
+    const evictedBatches: EvictedBatch[] = [];
+    const pool = this.pools.get(poolId);
+    if (!pool || maxTokens <= 0) {
+      return evictedBatches;
+    }
+
+    const current = this.estimateTokens(pool.messages);
+    if (current <= maxTokens) {
+      return evictedBatches;
+    }
+
+    const evicted: ContextMessage[] = [];
+    
+    // Simple LRU loop: drop oldest non-critical messages until under ceiling.
+    while (pool.messages.length > 0 && this.estimateTokens(pool.messages) > maxTokens) {
+      let lruIdx = -1;
+      let lruAccessedAt = Infinity;
+      for (let i = 0; i < pool.messages.length; i++) {
+        const msg = pool.messages[i];
+        if (!msg.critical) {
+          const accessedAt = msg.accessedAt ?? 0;
+          if (accessedAt < lruAccessedAt) {
+            lruAccessedAt = accessedAt;
+            lruIdx = i;
+          }
+        }
+      }
+      if (lruIdx === -1) {
+        break;
+      }
+      const removed = pool.messages.splice(lruIdx, 1)[0];
+      if (removed) {
+        evicted.push(removed);
+      }
+    }
+
+    if (evicted.length > 0) {
+      evictedBatches.push({
+        poolId,
+        state,
+        messages: evicted,
+        trigger
+      });
+    }
+
+    return evictedBatches;
+  }
+
+  /**
+   * Add a recall block to a pool (system message with previously seen context).
+   */
+  addRecallBlock(poolId: PoolID, content: string): void {
+    const pool = this.pools.get(poolId);
+    if (!pool) return;
+    
+    pool.messages.push({
+      role: 'system',
+      content,
+      createdAt: Date.now()
+    });
+  }
+
+  /** Initialize pools from a persisted snapshot */
+  initializeFromSnapshot(snapshot: { [key in PoolID]: ContextPool }): void {
+    this.pools = new Map();
+    for (const [id, pool] of Object.entries(snapshot)) {
+      this.pools.set(id as PoolID, pool);
     }
   }
 

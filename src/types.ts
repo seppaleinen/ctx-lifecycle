@@ -79,6 +79,7 @@ export interface PersistedPools {
   updatedAt: number;
   pools: {
     global: ContextPool;
+    project: ContextPool;
     planning: ContextPool;
     execution: ContextPool;
     testing: ContextPool;
@@ -98,6 +99,50 @@ export interface RetentionConfig {
   evictSourcePool: boolean;
 }
 
+/** Memory configuration for Phase 3 long-horizon memory */
+export interface MemoryConfig {
+  enabled: boolean;
+  dbPath: string;
+  recallBudgetTokens: number;
+  recallTopK: number;
+  journal: {
+    archiveBeforeEvict: boolean;
+  };
+  worker: {
+    llmSummaries: boolean;
+    model?: { providerID: string; id: string };
+    consolidateEvery: number;
+  };
+  vector: 'off' | 'auto';
+  embeddingModel: string;
+  archiveAfterDays: number;
+  purgeAfterDays: number;
+}
+
+/** Episode row from SQLite */
+export interface EpisodeRow {
+  id: number;
+  ts: number;
+  pool: PoolID;
+  state: StateMachineState;
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+  category: RetainedItemCategory | null;
+  summary_of: number | null;
+  superseded_by: number | null;
+  access_count: number;
+  last_accessed: number | null;
+}
+
+/** Evicted batch for journaling */
+export interface EvictedBatch {
+  poolId: PoolID;
+  state: StateMachineState;
+  messages: ContextMessage[];
+  retained?: RetainedContext;
+  trigger: string;
+}
+
 export interface ContextPagerConfig {
   enabled: boolean;
   tokenCeiling: number;
@@ -110,6 +155,8 @@ export interface ContextPagerConfig {
   };
   /** Retention settings. Deep-merged over defaults when a partial config is supplied. */
   retention: RetentionConfig;
+  /** Phase 3 long-horizon memory configuration */
+  memory: MemoryConfig;
 }
 
 export const STATE_TO_POOL: Record<string, PoolID> = {
@@ -119,10 +166,39 @@ export const STATE_TO_POOL: Record<string, PoolID> = {
   [StateMachineState.COMPLETE]: PoolID.PLANNING
 };
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /** Exact prefix of the system message carrying retained items into the target pool. */
 export const RETAINED_CONTEXT_PREFIX = 'Context retained from ';
+
+/** Prefix for recall blocks injected on state transitions */
+export const RECALL_PREFIX = 'Previously in ';
+
+/** Default XDG data path for memory database */
+const XDG_DATA_HOME = process.env.XDG_DATA_HOME;
+const HOME = process.env.HOME || '/Users/seppa';
+const DEFAULT_MEMORY_DB_PATH: string = XDG_DATA_HOME
+  ? `${XDG_DATA_HOME}/opencode/storage/plugin/context-pager/memory.db`
+  : `${HOME}/.local/share/opencode/storage/plugin/context-pager/memory.db`;
+
+export const DEFAULT_MEMORY_CONFIG: MemoryConfig = {
+  enabled: false,
+  dbPath: DEFAULT_MEMORY_DB_PATH,
+  recallBudgetTokens: 1500,
+  recallTopK: 8,
+  journal: {
+    archiveBeforeEvict: true
+  },
+  worker: {
+    llmSummaries: true,
+    model: undefined,
+    consolidateEvery: 40
+  },
+  vector: 'off',
+  embeddingModel: 'Xenova/all-MiniLM-L6-v2',
+  archiveAfterDays: 30,
+  purgeAfterDays: 90
+};
 
 export const DEFAULT_CONFIG: ContextPagerConfig = {
   enabled: true,
@@ -145,23 +221,24 @@ export const DEFAULT_CONFIG: ContextPagerConfig = {
     maxItems: 10,
     confidenceFloor: 0.4,
     evictSourcePool: true
-  }
+  },
+  memory: { ...DEFAULT_MEMORY_CONFIG }
 };
 
 /**
- * A user-supplied partial config. The `retention` block may itself be partial
- * so callers can tune one knob (e.g. `confidenceFloor`) without respecifying
- * every field; untouched retention keys fall back to defaults.
+ * A user-supplied partial config. The `retention` and `memory` blocks may themselves be partial
+ * so callers can tune one knob without respecifying every field; untouched keys fall back to defaults.
  */
-export type PartialContextPagerConfig = Partial<Omit<ContextPagerConfig, 'retention'>> & {
+export type PartialContextPagerConfig = Partial<Omit<ContextPagerConfig, 'retention' | 'memory'>> & {
   retention?: Partial<RetentionConfig>;
+  memory?: Partial<Omit<MemoryConfig, 'dbPath'>> & {
+    dbPath?: string;
+  };
 };
 
 /**
  * Deep-merge a partial user config over a fresh copy of DEFAULT_CONFIG.
- * The `retention` block is merged field-by-field; `pools`/`tokenCeiling`
- * fall back wholesale to defaults when absent. Returns a fresh object so
- * callers cannot mutate the shared DEFAULT_CONFIG.
+ * Returns a fresh object so callers cannot mutate the shared DEFAULT_CONFIG.
  */
 const POOL_KEYS = Object.keys(DEFAULT_CONFIG.pools) as (keyof ContextPagerConfig['pools'])[];
 
@@ -199,6 +276,26 @@ export function mergeConfig(user: PartialContextPagerConfig | undefined): Contex
       base.retention.confidenceFloor = r.confidenceFloor;
     }
     if (typeof r.evictSourcePool === 'boolean') base.retention.evictSourcePool = r.evictSourcePool;
+  }
+  if (user.memory) {
+    const m = user.memory;
+    base.memory = { ...base.memory };
+    if (typeof m.enabled === 'boolean') base.memory.enabled = m.enabled;
+    if (typeof m.dbPath === 'string') base.memory.dbPath = m.dbPath;
+    if (typeof m.recallBudgetTokens === 'number') base.memory.recallBudgetTokens = m.recallBudgetTokens;
+    if (typeof m.recallTopK === 'number') base.memory.recallTopK = m.recallTopK;
+    if (m.journal) {
+      base.memory.journal = { ...base.memory.journal, ...m.journal };
+    }
+    if (m.worker) {
+      base.memory.worker = { ...base.memory.worker, ...m.worker };
+    }
+    if (typeof m.vector === 'string' && (m.vector === 'off' || m.vector === 'auto')) {
+      base.memory.vector = m.vector;
+    }
+    if (typeof m.embeddingModel === 'string') base.memory.embeddingModel = m.embeddingModel;
+    if (typeof m.archiveAfterDays === 'number') base.memory.archiveAfterDays = m.archiveAfterDays;
+    if (typeof m.purgeAfterDays === 'number') base.memory.purgeAfterDays = m.purgeAfterDays;
   }
   return base;
 }
