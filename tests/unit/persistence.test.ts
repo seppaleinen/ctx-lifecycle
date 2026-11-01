@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'bun:test';
-import { PoolID } from '../../src/types.js';
+import { PoolID, ContextMessage } from '../../src/types.js';
 import { Persistence } from '../../src/persistence.js';
 
 describe('Persistence', () => {
@@ -75,7 +75,7 @@ describe('Persistence', () => {
 
   describe('saveAll', () => {
     it('saves all pools to storage', async () => {
-      const pools: Record<PoolID, { id: PoolID; messages: Array<{ role: string; content: string }> }> = {
+      const pools: Record<PoolID, { id: PoolID; messages: ContextMessage[] }> = {
         [PoolID.GLOBAL]: { id: PoolID.GLOBAL, messages: [{ role: 'user', content: 'global-msg' }] },
         [PoolID.PROJECT]: { id: PoolID.PROJECT, messages: [] },
         [PoolID.PLANNING]: { id: PoolID.PLANNING, messages: [] },

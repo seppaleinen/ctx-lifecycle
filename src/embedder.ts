@@ -27,7 +27,8 @@ export class Embedder {
     if (this.initialized || this.pipeline) return;
 
     try {
-      // Lazy-load transformers.js only when needed
+      // Lazy-load transformers.js only when needed (optional dep, not installed by default)
+      // @ts-expect-error — module is optional and only present when memory.vector is enabled
       const transformers = await import('@huggingface/transformers');
       const { pipeline } = transformers;
 
