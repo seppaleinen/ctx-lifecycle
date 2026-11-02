@@ -5,15 +5,13 @@ import { ContextRouter } from './router.js';
 import { SummaryGenerator } from './summary-generator.js';
 import { StateMachine } from './state-machine.js';
 
-let stateMachine: StateMachine | null = null;
-
 export default Plugin.define({
   id: 'context-pager',
   setup: async (ctx) => {
     const router = new ContextRouter();
     const config = mergeConfig(undefined);
     const summaryGenerator = new SummaryGenerator(router, config);
-    stateMachine = new StateMachine();
+    const stateMachine = new StateMachine();
 
     /**
      * Unified transition helper: 1-sentence header summary → structured
