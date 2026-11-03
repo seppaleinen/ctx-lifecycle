@@ -191,6 +191,99 @@ export class ContextRouter {
   }
 
   /**
+   * Add a summary message to replace compacted content in a pool.
+   * Used after compactPool() to insert the generated summary.
+   */
+  addSummaryToPool(poolId: PoolID, summary: string): void {
+    const pool = this.pools.get(poolId);
+    if (!pool) return;
+
+    pool.messages.push({
+      role: 'system',
+      content: summary,
+      createdAt: Date.now()
+    });
+  }
+
+  /**
+   * Compact a pool by removing oldest non-critical messages down to target.
+   * Returns the evicted messages for journaling/archival.
+   *
+   * - Only works on GLOBAL and PROJECT pools (long-lived pools that accumulate).
+   * - Does NOT archive or summarize - just identifies and removes messages.
+   * - Returns EvictedBatch[] for caller to handle archival and summary generation.
+   */
+  compactPool(
+    poolId: PoolID,
+    targetTokens: number,
+    state: StateMachineState
+  ): EvictedBatch[] {
+    const pool = this.pools.get(poolId);
+    if (!pool) {
+      return [];
+    }
+
+    // Scope discipline: only GLOBAL and PROJECT pools are compactable
+    if (poolId !== PoolID.GLOBAL && poolId !== PoolID.PROJECT) {
+      return [];
+    }
+
+    const current = this.estimateTokens(pool.messages);
+    if (current <= targetTokens || targetTokens <= 0) {
+      return [];
+    }
+
+    // Find messages to compact using LRU order, skipping critical
+    const toCompact: ContextMessage[] = [];
+    let accumulatedTokens = 0;
+    const tokensToRemove = current - targetTokens;
+
+    // Sort messages by LRU (oldest accessedAt first)
+    const sorted = [...pool.messages].sort((a, b) => {
+      const aTime = a.accessedAt ?? 0;
+      const bTime = b.accessedAt ?? 0;
+      return aTime - bTime;
+    });
+
+    for (const msg of sorted) {
+      if (msg.critical) continue;
+
+      const msgTokens = Math.ceil(msg.content.length / 4) + 4;
+      toCompact.push(msg);
+      accumulatedTokens += msgTokens;
+
+      if (accumulatedTokens >= tokensToRemove) break;
+    }
+
+    if (toCompact.length === 0) {
+      return [];
+    }
+
+    // Create the evicted batch for archival
+    const batch: EvictedBatch = {
+      poolId,
+      state,
+      messages: toCompact,
+      trigger: 'Auto-compact on threshold'
+    };
+
+    // Remove compacted messages from the pool by index position match
+    // (using accessedAt+role+content as unique identifier)
+    const toCompactKeys = new Set(
+      toCompact.map(m => `${m.accessedAt}|${m.role}|${m.content}`)
+    );
+    
+    const remaining = pool.messages.filter((m) => 
+      !toCompactKeys.has(`${m.accessedAt ?? 0}|${m.role}|${m.content}`)
+    );
+
+    // Replace pool messages with remaining (summary will be added separately)
+    pool.messages = remaining;
+
+    return [batch];
+  }
+
+  /**
    * Enforce a hard token ceiling on a pool using LRU eviction.
    *
    * - `critical` messages are NEVER evicted (pinned requirements survive).
@@ -234,6 +327,16 @@ export class ContextRouter {
       // Remove the LRU non-critical message.
       pool.messages.splice(lruIdx, 1);
     }
+  }
+
+  /**
+   * Get the current token count for a pool (deterministic estimate).
+   * Per message: ceil(content.length / 4) + 4.
+   */
+  getTokenCount(poolId: PoolID): number {
+    const pool = this.pools.get(poolId);
+    if (!pool) return 0;
+    return this.estimateTokens(pool.messages);
   }
 
   /**

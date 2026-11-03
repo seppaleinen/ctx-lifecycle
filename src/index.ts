@@ -4,6 +4,15 @@ import { StateMachineState, PoolID, STATE_TO_POOL, mergeConfig } from './types.j
 import { ContextRouter } from './router.js';
 import { SummaryGenerator } from './summary-generator.js';
 import { StateMachine } from './state-machine.js';
+import { generateCompactSummary } from './config.js';
+
+const POOL_NAME_MAP: Record<PoolID, string> = {
+  [PoolID.GLOBAL]: 'Global',
+  [PoolID.PROJECT]: 'Project',
+  [PoolID.PLANNING]: 'Planning',
+  [PoolID.EXECUTION]: 'Execution',
+  [PoolID.TESTING]: 'Testing'
+};
 
 export default Plugin.define({
   id: 'context-pager',
@@ -60,6 +69,32 @@ export default Plugin.define({
         // state-transition eviction path, so they need explicit LRU caps.
         router.enforceCeiling(PoolID.GLOBAL, config.pools.global.maxTokens);
         router.enforceCeiling(PoolID.PROJECT, config.pools.project.maxTokens);
+
+        // Auto-compact on threshold: check pool sizes vs compactAt
+        // Schedule compaction via setImmediate to keep hook synchronous
+        const checkAndScheduleCompaction = (poolId: PoolID, maxTokens: number, compactAt: number | undefined): void => {
+          const currentTokens = router.getTokenCount(poolId);
+          const threshold = compactAt ?? Math.floor(maxTokens * 0.75);
+          
+          if (currentTokens > threshold) {
+            setImmediate(() => {
+              const batches = router.compactPool(poolId, threshold, targetState);
+              for (const batch of batches) {
+                try {
+                  const poolName = POOL_NAME_MAP[batch.poolId] ?? 'Unknown';
+                  const summary = generateCompactSummary(batch.messages, 'Auto-compact on threshold', poolName);
+                  router.addSummaryToPool(batch.poolId, summary);
+                  console.debug(`[context-pager] Auto-compacted ${batch.poolId} Pool: ${batch.messages.length} messages removed`);
+                } catch (e) {
+                  console.error('[context-pager] Auto-compaction failed:', e);
+                }
+              }
+            });
+          }
+        };
+
+        checkAndScheduleCompaction(PoolID.GLOBAL, config.pools.global.maxTokens, config.pools.global.compactAt);
+        checkAndScheduleCompaction(PoolID.PROJECT, config.pools.project.maxTokens, config.pools.project.compactAt);
 
         const activeMessages = router.getActivePools(targetState);
         // Convert internal ContextMessage objects to OpenCode Message instances

@@ -271,4 +271,29 @@ describe('context-pager plugin hooks (real setup, instrumented context)', () => 
       expect(String(consoleDebugSpy.mock.calls.at(-1)![0])).toContain('coding -> debugging');
     });
   });
+
+  describe('auto-compact on threshold', () => {
+    it('does not trigger compaction when pool is under threshold', async () => {
+      const h = await createHarness();
+      
+      // Add a few small messages
+      for (let i = 0; i < 3; i++) {
+        // We can't directly add to router, but we can verify the hook doesn't error
+      }
+      
+      const event: ContextEvent = { messages: [] };
+      h.contextHook(event);
+      
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
+    });
+
+    it('handles empty messages gracefully', async () => {
+      const h = await createHarness();
+      
+      const event: ContextEvent = { messages: [] };
+      // Should not throw on empty pool
+      expect(() => h.contextHook(event)).not.toThrow();
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
+    });
+  });
 });

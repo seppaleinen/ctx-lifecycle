@@ -147,8 +147,8 @@ export interface ContextPagerConfig {
   enabled: boolean;
   tokenCeiling: number;
   pools: {
-    global: { maxTokens: number };
-    project: { maxTokens: number };
+    global: { maxTokens: number; compactAt?: number };
+    project: { maxTokens: number; compactAt?: number };
     planning: { maxTokens: number };
     execution: { maxTokens: number };
     testing: { maxTokens: number };
@@ -204,8 +204,8 @@ export const DEFAULT_CONFIG: ContextPagerConfig = {
   enabled: true,
   tokenCeiling: 25000,
   pools: {
-    global: { maxTokens: 5000 },
-    project: { maxTokens: 3000 },
+    global: { maxTokens: 5000, compactAt: 3750 }, // 75% of 5000
+    project: { maxTokens: 3000, compactAt: 2250 }, // 75% of 3000
     planning: { maxTokens: 8000 },
     execution: { maxTokens: 10000 },
     testing: { maxTokens: 5000 }
