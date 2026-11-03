@@ -1,5 +1,34 @@
 # Context-Pager Changelog
 
+## [Workstream 2: Auto-Compact on Threshold] — 2026-11-03
+
+### Added
+
+- **Config extension** (`src/types.ts`): `compactAt` field added to pool config for Global and Project pools, defaults to 75% of maxTokens
+- **Config utilities** (`src/config.ts`): `generateCompactSummary()` for deterministic summary generation, `estimatePoolTokens()` helper function
+- **Router method** (`src/router.ts`): `compactPool(poolId, targetTokens, state)` - identifies and removes oldest non-critical messages when pool exceeds threshold, returns `EvictedBatch[]` for archival
+- **Router helpers** (`src/router.ts`): `getTokenCount(poolId)` - returns current token count for a pool, `addSummaryToPool(poolId, summary)` - adds a system summary message to replace compacted content
+- **Hook integration** (`src/index.ts`): Auto-compact check in `context` hook after `enforceCeiling`, uses `setImmediate` for async execution to maintain hot-path sync invariance
+- **Unit tests** (`tests/unit/compact.test.ts`): 22 tests covering compactPool, getTokenCount, addSummaryToPool, generateCompactSummary
+- **Integration tests** (`tests/integration/hooks.test.ts`): Tests for auto-compact hook behavior
+
+### Key Design Decisions
+
+- **Scope**: Limited to Global and Project pools (the long-lived pools that accumulate context across states)
+- **Async execution**: Uses `setImmediate` to schedule compaction off the hot path, keeping the `context` hook synchronous
+- **Deterministic summary**: Uses extractive pattern matching for summarization without requiring LLM calls
+- **Lossless preservation**: Compacted messages are identified and returned for archival (caller handles journaling)
+- **LRU ordering**: Messages sorted by `accessedAt` - oldest non-critical first are compacted
+- **Critical protection**: Messages with `critical: true` (pinned requirements) are never compacted, following ADR-007
+
+### Build Status
+
+- `tsc --noEmit`: passes
+- `bun test tests/`: 116 tests passing (92 original + 24 new)
+- `bun run verify`: green
+- `eslint src/`: clean
+- `bun build src/index.ts --outdir=dist --target=bun`: succeeds
+
 ## [Workstream 1: Foundation] — 2026-10-30
 
 ### Added
