@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "context-pager OpenCode V2 plugin for ctx-lifecycle",
+  "exports": {
+    ".": "./dist/index.js"
+  },
   "engines": {
     "bun": ">=1.0.0"
   },

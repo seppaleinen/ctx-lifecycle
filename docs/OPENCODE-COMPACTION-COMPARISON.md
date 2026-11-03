@@ -75,12 +75,27 @@ Our approach is purpose-built for an *injected plugin*, not direct session manag
 
 The following GitHub issues track deeper analysis of each gap:
 
-1. `[[issue:GR-001]]` Tool-output pruning strategy for ctx-lifecycle pools — Should we add an equivalent to OpenCode's tool-pruning for pools that accumulate large injected content?
-2. `[[issue:GR-002]]` Token estimation accuracy — How often does `chars/4+4` undershoot for typical pool content (code, non-English, emoji)? Consider a more precise estimator.
-3. `[[issue:GR-003]]` Anchored vs batch summarization — Should ctx-lifecycle adopt an anchored approach (pass previous summaries to merge) for better long-term coherence in Global pools?
+1. `[[issue:GR-001]]` Token estimation accuracy — How often does `chars/4+4` undershoot for typical pool content (code, non-English, emoji)? Consider a more precise estimator.
+2. `[[issue:GR-002]]` Anchored vs batch summarization — Should ctx-lifecycle adopt an anchored approach (pass previous summaries to merge) for better long-term coherence in Global pools?
+3. `[[issue:GR-003]]` Tool-output pruning strategy for ctx-lifecycle pools — Should we add an equivalent to OpenCode's tool-pruning for pools that accumulate large injected content?
 4. `[[issue:GR-004]]` Overflow detection for pool budgets — While unlikely on hot path, should we add a safety-net check if pool token estimate diverges from reality?
 
 ---
+
+## Related issues
+
+The four gaps above are tracked as GitHub issues:
+
+| # | Title | Labels |
+|---|-------|--------|
+| #16 | GR-001: Audit token estimation accuracy vs actual provider tokens | research, technical-debt |
+| #17 | GR-002: Anchored summarization for long-lived pools | research, enhancement |
+| #18 | GR-003: Tool-output pruning strategy for memory pools | research, technical-debt |
+| #19 | GR-004: Overflow detection for pool budgets | research, technical-debt |
+
+## Distribution
+
+The plugin is currently a **local development plugin** only — no published npm package exists yet. Publishing is tracked in issue #20.
 
 ## References
 
